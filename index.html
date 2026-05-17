@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rhythm Wheel</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #07070d; }
+  #root { height: 100%; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Dependencies from CDN -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ============================================================
+// CONFIG
+// ============================================================
+const TWO_PI = Math.PI * 2;
+const INITIAL_SLOTS = 8;
+
+const DRUM_VOICES = [
+  { name: "KICK", color: "#e63946", short: "KK" },
+  { name: "SNARE", color: "#ff6b35", short: "SN" },
+  { name: "HAT", color: "#00f5d4", short: "HH" },
+  { name: "CLAP", color: "#b388ff", short: "CP" },
+];
+const DRUM_KEYS = ["a", "s", "d", "f"];
+const DRUM_UNLOCK = [0, 2, 5, 8];
+
+const MELODY_UNLOCK_ROUND = 10;
+
+// ============================================================
+// MELODY LIBRARY — public domain classical themes
+// ============================================================
+const MELODY_LIBRARY = [
+  {
+    name: "Ode to Joy", composer: "Beethoven", difficulty: 1, bpm: 80, numSlots: 8,
+    notes: [{ slot:0,note:"E4" },{ slot:1,note:"E4" },{ slot:2,note:"F4" },{ slot:3,note:"G4" },{ slot:4,note:"G4" },{ slot:5,note:"F4" },{ slot:6,note:"E4" },{ slot:7,note:"D4" }],
+    chords: [{ slots:[0,1],pad:["E4","G4","B4"],bass:"E2" },{ slots:[2,3],pad:["F4","A4","C5"],bass:"F2" },{ slots:[4,5],pad:["G4","B4","D5"],bass:"G2" },{ slots:[6,7],pad:["E4","G4","B4"],bass:"E2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Twinkle Twinkle", composer: "Traditional", difficulty: 1, bpm: 80, numSlots: 8,
+    notes: [{ slot:0,note:"C4" },{ slot:1,note:"G4" },{ slot:2,note:"A4" },{ slot:3,note:"G4" },{ slot:4,note:"F4" },{ slot:5,note:"E4" },{ slot:6,note:"D4" },{ slot:7,note:"C4" }],
+    chords: [{ slots:[0,1],pad:["C4","E4","G4"],bass:"C2" },{ slots:[2,3],pad:["C4","E4","G4"],bass:"G2" },{ slots:[4,5],pad:["F4","A4","C5"],bass:"F2" },{ slots:[6,7],pad:["C4","E4","G4"],bass:"C2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Minuet in G", composer: "Bach", difficulty: 2, bpm: 90, numSlots: 8,
+    notes: [{ slot:0,note:"G4" },{ slot:1,note:"A4" },{ slot:2,note:"B4" },{ slot:3,note:"C5" },{ slot:4,note:"D5" },{ slot:5,note:"D4" },{ slot:6,note:"E4" },{ slot:7,note:"D4" }],
+    chords: [{ slots:[0,1],pad:["G4","B4","D5"],bass:"G2" },{ slots:[2,3],pad:["C4","E4","G4"],bass:"C2" },{ slots:[4,5],pad:["D4","F#4","A4"],bass:"D2" },{ slots:[6,7],pad:["G4","B4","D5"],bass:"G2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Greensleeves", composer: "Traditional", difficulty: 2, bpm: 75, numSlots: 8,
+    notes: [{ slot:0,note:"A4" },{ slot:1,note:"C5" },{ slot:2,note:"D5" },{ slot:3,note:"E5" },{ slot:4,note:"F5" },{ slot:5,note:"E5" },{ slot:6,note:"D5" },{ slot:7,note:"B4" }],
+    chords: [{ slots:[0,1],pad:["A4","C5","E5"],bass:"A2" },{ slots:[2,3],pad:["C4","E4","G4"],bass:"C2" },{ slots:[4,5],pad:["F4","A4","C5"],bass:"F2" },{ slots:[6,7],pad:["E4","G#4","B4"],bass:"E2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Canon in D", composer: "Pachelbel", difficulty: 2, bpm: 70, numSlots: 8,
+    notes: [{ slot:0,note:"D5" },{ slot:1,note:"C#5" },{ slot:2,note:"B4" },{ slot:3,note:"A4" },{ slot:4,note:"G4" },{ slot:5,note:"F#4" },{ slot:6,note:"E4" },{ slot:7,note:"D4" }],
+    chords: [{ slots:[0,1],pad:["D4","F#4","A4"],bass:"D2" },{ slots:[2,3],pad:["A3","C#4","E4"],bass:"A1" },{ slots:[4,5],pad:["B3","D4","F#4"],bass:"B1" },{ slots:[6,7],pad:["E4","G#4","B4"],bass:"E2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Brahms Lullaby", composer: "Brahms", difficulty: 2, bpm: 65, numSlots: 8,
+    notes: [{ slot:0,note:"G4" },{ slot:1,note:"E4" },{ slot:2,note:"G4" },{ slot:3,note:"E4" },{ slot:4,note:"G4" },{ slot:5,note:"A4" },{ slot:6,note:"B4" },{ slot:7,note:"G4" }],
+    chords: [{ slots:[0,1],pad:["C4","E4","G4"],bass:"C2" },{ slots:[2,3],pad:["C4","E4","G4"],bass:"C2" },{ slots:[4,5],pad:["G3","B3","D4"],bass:"G2" },{ slots:[6,7],pad:["C4","E4","G4"],bass:"C2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Für Elise", composer: "Beethoven", difficulty: 3, bpm: 85, numSlots: 8,
+    notes: [{ slot:0,note:"E5" },{ slot:1,note:"D#5" },{ slot:2,note:"E5" },{ slot:3,note:"B4" },{ slot:4,note:"D5" },{ slot:5,note:"C5" },{ slot:6,note:"A4" },{ slot:7,note:"E4" }],
+    chords: [{ slots:[0,1],pad:["A3","C4","E4"],bass:"A2" },{ slots:[2,3],pad:["E3","G#3","B3"],bass:"E2" },{ slots:[4,5],pad:["A3","C4","E4"],bass:"A2" },{ slots:[6,7],pad:["C4","E4","G4"],bass:"C2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Eine Kleine Nachtmusik", composer: "Mozart", difficulty: 3, bpm: 110, numSlots: 8,
+    notes: [{ slot:0,note:"G4" },{ slot:1,note:"D5" },{ slot:2,note:"D5" },{ slot:3,note:"E5" },{ slot:4,note:"D5" },{ slot:5,note:"C5" },{ slot:6,note:"B4" },{ slot:7,note:"G4" }],
+    chords: [{ slots:[0,1],pad:["G4","B4","D5"],bass:"G2" },{ slots:[2,3],pad:["D4","F#4","A4"],bass:"D2" },{ slots:[4,5],pad:["G4","B4","D5"],bass:"G2" },{ slots:[6,7],pad:["G4","B4","D5"],bass:"G2" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Moonlight Sonata", composer: "Beethoven", difficulty: 4, bpm: 60, numSlots: 8,
+    notes: [{ slot:0,note:"C#4" },{ slot:1,note:"E4" },{ slot:2,note:"G#4" },{ slot:3,note:"C#5" },{ slot:4,note:"B4" },{ slot:5,note:"G#4" },{ slot:6,note:"E4" },{ slot:7,note:"C#4" }],
+    chords: [{ slots:[0,1],pad:["C#4","G#4","C#5"],bass:"C#2" },{ slots:[2,3],pad:["C#4","E4","G#4"],bass:"C#2" },{ slots:[4,5],pad:["B3","D#4","F#4"],bass:"B1" },{ slots:[6,7],pad:["A3","C#4","E4"],bass:"A1" }],
+    playableSlots: [0,2,4,6],
+  },
+  {
+    name: "Ave Maria", composer: "Schubert", difficulty: 3, bpm: 70, numSlots: 8,
+    notes: [{ slot:0,note:"F4" },{ slot:1,note:"G4" },{ slot:2,note:"A4" },{ slot:3,note:"C5" },{ slot:4,note:"Bb4" },{ slot:5,note:"A4" },{ slot:6,note:"G4" },{ slot:7,note:"F4" }],
+    chords: [{ slots:[0,1],pad:["F4","A4","C5"],bass:"F2" },{ slots:[2,3],pad:["C4","E4","G4"],bass:"C2" },{ slots:[4,5],pad:["F4","A4","C5"],bass:"F2" },{ slots:[6,7],pad:["Bb3","D4","F4"],bass:"Bb1" }],
+    playableSlots: [0,2,4,6],
+  },
+];
+
+function getMelodyPlayableMap(mel) {
+  const uniqueNotes = [...new Set(mel.notes.map(n => n.note))].slice(0, 4);
+  const noteToBtn = {};
+  uniqueNotes.forEach((n, i) => { noteToBtn[n] = i; });
+  return { uniqueNotes, noteToBtn };
+}
+
+const MELODY_KEYS_MAP = { "j": 0, "k": 1, "l": 2, ";": 3 };
+const MELODY_KEY_LABELS = ["J","K","L",";"];
+const MELODY_COLOR = "#ffd166";
+
+const BASE_DENSITY = 0.22;
+const DENSITY_PER_ROUND = 0.02;
+const MAX_DENSITY = 0.6;
+const HIT_WINDOW = 0.7;
+const PERFECT_WINDOW = 0.3;
+const POINTS_PERFECT = 200;
+const POINTS_GOOD = 100;
+const PASS_THRESHOLD = 0.6;
+const HL_DUR = 300;
+
+const ROUND_MESSAGES = [
+  "LET'S GO","WARMING UP","NICE GROOVE","IN THE POCKET",
+  "MELODY TIME!","FEELING IT","SMOOTH","ON FIRE",
+  "UNSTOPPABLE","LEGENDARY","TRANSCENDENT","∞",
+];
+
+const SYNTH_PRESETS = [
+  { name:"WARM", oscillator:{type:"triangle"}, envelope:{attack:0.08,decay:0.3,sustain:0.4,release:0.6} },
+  { name:"PLUCK", oscillator:{type:"sawtooth"}, envelope:{attack:0.005,decay:0.2,sustain:0.1,release:0.4} },
+  { name:"BELL", oscillator:{type:"sine"}, envelope:{attack:0.02,decay:0.5,sustain:0.1,release:0.8} },
+];
+
+// ============================================================
+// PATTERN GEN
+// ============================================================
+function generateRound(roundNum) {
+  const mel = MELODY_LIBRARY[roundNum % MELODY_LIBRARY.length];
+  const numSlots = mel.numSlots;
+  const bpm = mel.bpm;
+  const melodyActive = roundNum >= MELODY_UNLOCK_ROUND;
+  const unlockedDrums = DRUM_VOICES.filter((_, i) => roundNum >= DRUM_UNLOCK[i]);
+  const density = Math.min(BASE_DENSITY + roundNum * DENSITY_PER_ROUND, MAX_DENSITY);
+  const synthPreset = SYNTH_PRESETS[roundNum % SYNTH_PRESETS.length];
+  const { uniqueNotes, noteToBtn } = getMelodyPlayableMap(mel);
+
+  const drumHits = [];
+  for (let s = 1; s < numSlots; s++) {
+    if (Math.random() < density) {
+      const vi = DRUM_VOICES.indexOf(unlockedDrums[Math.floor(Math.random() * unlockedDrums.length)]);
+      drumHits.push({ slot: s, type: "drum", voiceIdx: vi });
+    }
+  }
+  if (drumHits.length < 2) {
+    drumHits.push({ slot: 1, type: "drum", voiceIdx: 0 });
+    drumHits.push({ slot: Math.floor(numSlots / 2), type: "drum", voiceIdx: 0 });
+  }
+
+  const newDrumIdx = DRUM_UNLOCK.indexOf(roundNum);
+  if (newDrumIdx !== -1) {
+    const newVi = newDrumIdx;
+    const existing = drumHits.filter(h => h.voiceIdx === newVi);
+    const needed = 2 - existing.length;
+    if (needed > 0) {
+      const usedSlots = new Set(drumHits.map(h => h.slot));
+      const candidates = [];
+      for (let s = 1; s < numSlots; s++) { if (!usedSlots.has(s)) candidates.push(s); }
+      for (let n = 0; n < needed && candidates.length > 0; n++) {
+        const pick = candidates.splice(Math.floor(candidates.length / (needed - n + 1)), 1)[0];
+        drumHits.push({ slot: pick, type: "drum", voiceIdx: newVi });
+      }
+    }
+  }
+  const usedDrumSlots = new Set(drumHits.map(h => h.slot));
+
+  const melodyHits = [];
+  if (melodyActive) {
+    const roundsSinceUnlock = roundNum - MELODY_UNLOCK_ROUND;
+    const maxMelodyNotes = roundsSinceUnlock <= 1 ? 2 : roundsSinceUnlock === 2 ? 3 : 4;
+    const eligibleSlots = mel.playableSlots.slice(0, maxMelodyNotes);
+    for (const slot of eligibleSlots) {
+      const melNote = mel.notes.find(n => n.slot === slot);
+      if (!melNote || usedDrumSlots.has(slot)) continue;
+      const btnIdx = noteToBtn[melNote.note] ?? 0;
+      melodyHits.push({ slot, type: "melody", noteIdx: btnIdx, note: melNote.note });
+    }
+  }
+
+  const bgMelody = mel.notes
+    .filter(n => !usedDrumSlots.has(n.slot) && !melodyHits.some(m => m.slot === n.slot))
+    .map(n => ({ slot: n.slot, note: n.note, noteIdx: noteToBtn[n.note] ?? 0 }));
+
+  const padChords = mel.chords.map(c => ({ slot: c.slots[0], notes: c.pad }));
+  const bassNotes = mel.chords.map(c => ({ slot: c.slots[0], note: c.bass }));
+
+  const grooveHits = [];
+  for (let s = 0; s < numSlots; s++) {
+    if (s % 2 === 0) grooveHits.push({ slot: s });
+  }
+
+  const allHits = [...drumHits, ...melodyHits].sort((a, b) => a.slot - b.slot);
+
+  return {
+    numSlots, bpm, allHits, drumHits, melodyHits, bgMelody,
+    bassNotes, padChords, grooveHits,
+    synthPreset, melodyActive, unlockedDrums,
+    melodyName: mel.name, composer: mel.composer,
+    uniqueNotes, noteToBtn,
+  };
+}
+
+// ============================================================
+// FONTS + ANIMS
+// ============================================================
+const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=IBM+Plex+Mono:wght@300;400;500&display=swap');`;
+const ANIMS = `
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-30px)}}
+@keyframes countPop{0%{transform:scale(2);opacity:0}30%{transform:scale(1);opacity:1}80%{opacity:1}100%{opacity:0;transform:scale(.7)}}
+@keyframes glow{0%,100%{filter:brightness(1)}50%{filter:brightness(1.4)}}
+@keyframes hitBurst{0%{transform:scale(1);opacity:1}50%{transform:scale(1.6);opacity:.8}100%{transform:scale(2.2);opacity:0}}
+`;
+
+// ============================================================
+// DRUM SYNTHS
+// ============================================================
+function createDrums(dest) {
+  const kick = new Tone.MembraneSynth({ pitchDecay:.05,octaves:6,oscillator:{type:"sine"},envelope:{attack:.001,decay:.3,sustain:0,release:.4} }).connect(dest);
+  kick.volume.value = 2;
+  const snareN = new Tone.NoiseSynth({ noise:{type:"white"},envelope:{attack:.001,decay:.15,sustain:0,release:.1} }).connect(dest);
+  snareN.volume.value = -2;
+  const snareT = new Tone.MembraneSynth({ pitchDecay:.01,octaves:4,envelope:{attack:.001,decay:.1,sustain:0,release:.05} }).connect(dest);
+  const hat = new Tone.MetalSynth({ frequency:400,envelope:{attack:.001,decay:.06,release:.01},harmonicity:5.1,modulationIndex:32,resonance:4000,octaves:1.5 }).connect(dest);
+  hat.volume.value = -8;
+  const clap = new Tone.NoiseSynth({ noise:{type:"pink"},envelope:{attack:.002,decay:.12,sustain:0,release:.08} }).connect(dest);
+  clap.volume.value = -2;
+  const grooveHat = new Tone.MetalSynth({ frequency:500,envelope:{attack:.001,decay:.04,release:.008},harmonicity:5.1,modulationIndex:28,resonance:5000,octaves:1 }).connect(dest);
+  grooveHat.volume.value = -22;
+  const triggers = [
+    () => kick.triggerAttackRelease("C1","8n"),
+    () => { snareN.triggerAttackRelease("8n"); snareT.triggerAttackRelease("G3","16n"); },
+    () => hat.triggerAttackRelease("16n"),
+    () => clap.triggerAttackRelease("16n"),
+  ];
+  const playGrooveHat = () => grooveHat.triggerAttackRelease("32n");
+  const dispose = () => [kick,snareN,snareT,hat,clap,grooveHat].forEach(s => s.dispose());
+  return { triggers, playGrooveHat, dispose };
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+function RhythmWheel() {
+  const [screen,setScreen] = useState("menu");
+  const [round,setRound] = useState(0);
+  const [score,setScore] = useState(0);
+  const [combo,setCombo] = useState(0);
+  const [maxCombo,setMaxCombo] = useState(0);
+  const [attempts,setAttempts] = useState(1);
+  const [passed,setPassed] = useState(false);
+  const [roundData,setRoundData] = useState(null);
+  const [sweepAngle,setSweepAngle] = useState(-1);
+  const [litSlots,setLitSlots] = useState([]);
+  const [playerHits,setPlayerHits] = useState([]);
+  const [floats,setFloats] = useState([]);
+  const [roundStats,setRoundStats] = useState({perfect:0,good:0,missed:0});
+  const [countNum,setCountNum] = useState(3);
+  const [,forceRender] = useState(0);
+  const [ghostHits,setGhostHits] = useState([]);
+  const [slowReplayAvail,setSlowReplayAvail] = useState(false);
+
+  const drumsRef = useRef(null), compRef = useRef(null), synthRef = useRef(null);
+  const synthRevRef = useRef(null), synthDelRef = useRef(null);
+  const bassRef = useRef(null), padRef = useRef(null), padRevRef = useRef(null);
+  const animRef = useRef(null), sweepStartRef = useRef(0), rdRef = useRef(null);
+  const matchedRef = useRef(new Set()), playerHitsRef = useRef([]);
+  const comboRef = useRef(0), scoreRef = useRef(0);
+  const statsRef = useRef({perfect:0,good:0,missed:0});
+  const listenTriggeredRef = useRef(new Set()), countIntervalRef = useRef(null);
+  const savedRoundDataRef = useRef(null);
+  const screenRef = useRef("menu"), roundRef = useRef(0), passedRef = useRef(false);
+  const drumHlRef = useRef({}), melodyHlRef = useRef({});
+  const hitImpactRef = useRef(0), startedRef = useRef(false);
+
+  rdRef.current = roundData;
+  screenRef.current = screen;
+  roundRef.current = round;
+  passedRef.current = passed;
+
+  const isDrumLit = (vi) => drumHlRef.current[vi] && Date.now()-drumHlRef.current[vi]<HL_DUR;
+  const isMelodyLit = (ni) => melodyHlRef.current[ni] && Date.now()-melodyHlRef.current[ni]<HL_DUR;
+
+  useEffect(()=>{ const iv=setInterval(()=>forceRender(c=>c+1),100); return()=>clearInterval(iv); },[]);
+  useEffect(()=>{ const iv=setInterval(()=>setLitSlots(prev=>{const now=Date.now();const n=prev.filter(s=>now-s.time<500);return n.length!==prev.length?n:prev;}),250); return()=>clearInterval(iv); },[]);
+
+  const initAudio = useCallback(async () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    await Tone.start();
+    compRef.current = new Tone.Compressor(-18,4).toDestination();
+    drumsRef.current = createDrums(compRef.current);
+    synthRevRef.current = new Tone.Reverb({decay:2,wet:0.25}).connect(compRef.current);
+    synthDelRef.current = new Tone.FeedbackDelay({delayTime:"8n",feedback:0.15,wet:0.12}).connect(synthRevRef.current);
+    synthRef.current = new Tone.PolySynth(Tone.Synth,{oscillator:{type:"triangle"},envelope:{attack:0.08,decay:0.3,sustain:0.4,release:0.6}}).connect(synthDelRef.current);
+    synthRef.current.maxPolyphony = 6;
+    synthRef.current.volume.value = -4;
+    bassRef.current = new Tone.MonoSynth({oscillator:{type:"triangle"},envelope:{attack:0.02,decay:0.3,sustain:0.4,release:0.5},filterEnvelope:{attack:0.01,decay:0.2,sustain:0.3,release:0.5,baseFrequency:80,octaves:2}}).connect(compRef.current);
+    bassRef.current.volume.value = -14;
+    padRevRef.current = new Tone.Reverb({decay:3.5,wet:0.5}).connect(compRef.current);
+    padRef.current = new Tone.PolySynth(Tone.Synth,{oscillator:{type:"sine"},envelope:{attack:0.15,decay:0.4,sustain:0.5,release:1.2}}).connect(padRevRef.current);
+    padRef.current.maxPolyphony = 4;
+    padRef.current.volume.value = -18;
+  }, []);
+
+  const playDrum = useCallback((vi) => { drumsRef.current?.triggers[vi](); drumHlRef.current[vi]=Date.now(); }, []);
+  const playMelody = useCallback((note,noteIdx) => { synthRef.current?.triggerAttackRelease(note,"8n"); if(noteIdx!=null)melodyHlRef.current[noteIdx]=Date.now(); }, []);
+  const playBass = useCallback((note) => { bassRef.current?.triggerAttackRelease(note,"4n"); }, []);
+  const playPad = useCallback((note) => { padRef.current?.triggerAttackRelease(note,"4n"); }, []);
+  const playPadChord = useCallback((notes) => { notes.forEach(n=>padRef.current?.triggerAttackRelease(n,"2n")); }, []);
+  const playGrooveHat = useCallback(() => { drumsRef.current?.playGrooveHat(); }, []);
+  const applySynthPreset = useCallback((preset) => { if(!synthRef.current)return; synthRef.current.set({oscillator:preset.oscillator,envelope:preset.envelope}); }, []);
+
+  const evaluateRound = useCallback((data) => {
+    let missed = 0;
+    data.allHits.forEach((_,i) => { if(!matchedRef.current.has(i))missed++; });
+    if(missed>0){comboRef.current=0;setCombo(0);}
+    statsRef.current.missed = missed;
+    setRoundStats({...statsRef.current});
+    const total = data.allHits.length;
+    const didPass = total>0?((total-missed)/total)>=PASS_THRESHOLD:true;
+    passedRef.current=didPass; setPassed(didPass);
+    setSlowReplayAvail(!didPass);
+    screenRef.current="result"; setScreen("result");
+  }, []);
+
+  const doSlowReplay = useCallback((data) => {
+    if(!data)return;
+    cancelAnimationFrame(animRef.current);
+    listenTriggeredRef.current = new Set();
+    setLitSlots([]);
+    screenRef.current="listen"; setScreen("listen");
+    const SLOW = 0.55;
+    const totalDur = data.numSlots*(60/data.bpm)/SLOW;
+    const start = performance.now(); sweepStartRef.current = start;
+    const anim = () => {
+      const elapsed = (performance.now()-start)/1000;
+      const progress = elapsed/totalDur;
+      if(progress>=1){setSweepAngle(-1);setSlowReplayAvail(false);screenRef.current="result";setScreen("result");return;}
+      setSweepAngle(progress);
+      data.allHits.forEach((h,i)=>{const t=(h.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("sr"+i)){listenTriggeredRef.current.add("sr"+i);if(h.type==="drum")playDrum(h.voiceIdx);else playMelody(h.note,h.noteIdx);setLitSlots(prev=>[...prev,{...h,time:Date.now()}]);}});
+      data.bgMelody.forEach((m,i)=>{const t=(m.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("srbg"+i)){listenTriggeredRef.current.add("srbg"+i);playMelody(m.note,null);}});
+      data.bassNotes?.forEach((b,i)=>{const t=(b.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("srbs"+i)){listenTriggeredRef.current.add("srbs"+i);playBass(b.note);}});
+      data.padChords?.forEach((p,i)=>{const t=(p.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("srp"+i)){listenTriggeredRef.current.add("srp"+i);playPadChord(p.notes);}});
+      animRef.current = requestAnimationFrame(anim);
+    };
+    animRef.current = requestAnimationFrame(anim);
+  }, [playDrum,playMelody,playBass,playPadChord]);
+
+  const startPlay = useCallback((data) => {
+    screenRef.current="play"; setScreen("play");
+    matchedRef.current=new Set(); listenTriggeredRef.current=new Set();
+    playerHitsRef.current=[]; setPlayerHits([]); setLitSlots([]); setGhostHits([]);
+    const ghostedRef = new Set();
+    const totalDur = data.numSlots*(60/data.bpm);
+    const slotW = 1/data.numSlots;
+    const ghostMargin = slotW*HIT_WINDOW*1.2;
+    const start = performance.now(); sweepStartRef.current = start;
+    const anim = () => {
+      const elapsed = (performance.now()-start)/1000;
+      const progress = elapsed/totalDur;
+      if(progress>=1){setSweepAngle(-1);evaluateRound(data);return;}
+      setSweepAngle(progress);
+      data.allHits.forEach((h,i)=>{
+        if(ghostedRef.has(i)||matchedRef.current.has(i))return;
+        const target=h.slot/data.numSlots;
+        if(progress>target+ghostMargin){
+          ghostedRef.add(i);
+          const color=h.type==="drum"?DRUM_VOICES[h.voiceIdx].color:MELODY_COLOR;
+          const label=h.type==="drum"?DRUM_VOICES[h.voiceIdx].short:(h.note?.replace(/\d/,"")||"?");
+          setGhostHits(prev=>[...prev,{...h,color,label,time:Date.now()}]);
+          if(h.type==="drum")drumHlRef.current[h.voiceIdx]=Date.now();
+          else if(h.noteIdx!=null)melodyHlRef.current[h.noteIdx]=Date.now();
+        }
+      });
+      data.bgMelody.forEach((m,i)=>{const t=(m.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("pbg"+i)){listenTriggeredRef.current.add("pbg"+i);playMelody(m.note,null);}});
+      data.bassNotes?.forEach((b,i)=>{const t=(b.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("pbass"+i)){listenTriggeredRef.current.add("pbass"+i);playBass(b.note);}});
+      data.padChords?.forEach((p,i)=>{const t=(p.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("ppad"+i)){listenTriggeredRef.current.add("ppad"+i);playPadChord(p.notes);}});
+      data.grooveHits?.forEach((g,i)=>{const t=(g.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("pgr"+i)){listenTriggeredRef.current.add("pgr"+i);playGrooveHat();}});
+      if(!data.melodyActive){data.melodyHits.forEach((m,i)=>{const t=(m.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("pm"+i)){listenTriggeredRef.current.add("pm"+i);playMelody(m.note,null);}});}
+      animRef.current = requestAnimationFrame(anim);
+    };
+    animRef.current = requestAnimationFrame(anim);
+  }, [playMelody,playBass,playPad,playPadChord,playGrooveHat,evaluateRound]);
+
+  const doCountdown = useCallback((data) => {
+    setScreen("countdown"); setLitSlots([]);
+    drumHlRef.current={}; melodyHlRef.current={};
+    let c=3; setCountNum(3);
+    countIntervalRef.current = setInterval(()=>{c--;if(c<=0){clearInterval(countIntervalRef.current);startPlay(data);}else setCountNum(c);},500);
+  }, [startPlay]);
+
+  const beginRound = useCallback((r,existingData) => {
+    cancelAnimationFrame(animRef.current); clearInterval(countIntervalRef.current);
+    roundRef.current=r; setRound(r);
+    const data = existingData||generateRound(r);
+    if(!existingData)savedRoundDataRef.current=data;
+    setRoundData(data); rdRef.current=data;
+    setPlayerHits([]); playerHitsRef.current=[];
+    matchedRef.current=new Set(); listenTriggeredRef.current=new Set();
+    statsRef.current={perfect:0,good:0,missed:0}; setRoundStats({perfect:0,good:0,missed:0});
+    setLitSlots([]); setFloats([]); setGhostHits([]);
+    passedRef.current=false; setPassed(false); setSlowReplayAvail(false);
+    applySynthPreset(data.synthPreset);
+    drumHlRef.current={}; melodyHlRef.current={};
+    screenRef.current="listen"; setScreen("listen");
+    const totalDur = data.numSlots*(60/data.bpm);
+    const start = performance.now(); sweepStartRef.current=start;
+    const anim = () => {
+      const elapsed = (performance.now()-start)/1000;
+      const progress = elapsed/totalDur;
+      if(progress>=1){setSweepAngle(-1);setTimeout(()=>doCountdown(data),600);return;}
+      setSweepAngle(progress);
+      data.allHits.forEach((h,i)=>{const t=(h.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("h"+i)){listenTriggeredRef.current.add("h"+i);if(h.type==="drum")playDrum(h.voiceIdx);else playMelody(h.note,h.noteIdx);setLitSlots(prev=>[...prev,{...h,time:Date.now()}]);}});
+      data.bgMelody.forEach((m,i)=>{const t=(m.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("bg"+i)){listenTriggeredRef.current.add("bg"+i);playMelody(m.note,null);setLitSlots(prev=>[...prev,{slot:m.slot,type:"bg",noteIdx:m.noteIdx,time:Date.now()}]);}});
+      data.bassNotes?.forEach((b,i)=>{const t=(b.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("bass"+i)){listenTriggeredRef.current.add("bass"+i);playBass(b.note);}});
+      data.padChords?.forEach((p,i)=>{const t=(p.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("pad"+i)){listenTriggeredRef.current.add("pad"+i);playPadChord(p.notes);}});
+      data.grooveHits?.forEach((g,i)=>{const t=(g.slot/data.numSlots)*totalDur;if(elapsed>=t&&!listenTriggeredRef.current.has("gr"+i)){listenTriggeredRef.current.add("gr"+i);playGrooveHat();}});
+      animRef.current = requestAnimationFrame(anim);
+    };
+    animRef.current = requestAnimationFrame(anim);
+  }, [playDrum,playMelody,playBass,playPad,playPadChord,playGrooveHat,applySynthPreset,doCountdown]);
+
+  const startGame = useCallback(async () => {
+    await initAudio();
+    setScore(0); scoreRef.current=0;
+    setCombo(0); comboRef.current=0;
+    setMaxCombo(0); setAttempts(1);
+    savedRoundDataRef.current=null;
+    beginRound(0,null);
+  }, [initAudio,beginRound]);
+
+  const addFloat = useCallback((a,text,color) => {
+    const id = Date.now()+Math.random();
+    setFloats(prev=>[...prev,{id,angle01:a,text,color}]);
+    setTimeout(()=>setFloats(prev=>prev.filter(f=>f.id!==id)),900);
+  }, []);
+
+  const tryMatch = useCallback((tapAngle,type,voiceIdx,noteIdx,data) => {
+    let bestIdx=-1, bestDist=Infinity;
+    data.allHits.forEach((h,i)=>{
+      if(matchedRef.current.has(i)||h.type!==type)return;
+      if(type==="drum"&&h.voiceIdx!==voiceIdx)return;
+      if(type==="melody"&&h.noteIdx!==noteIdx)return;
+      const target=h.slot/data.numSlots;
+      let dist=Math.abs(tapAngle-target); dist=Math.min(dist,1-dist);
+      if(dist<bestDist){bestDist=dist;bestIdx=i;}
+    });
+    const slotW=1/data.numSlots,hitW=slotW*HIT_WINDOW,perfW=slotW*PERFECT_WINDOW;
+    let grade=null;
+    if(bestIdx!==-1&&bestDist<=hitW){
+      matchedRef.current.add(bestIdx);
+      grade=bestDist<=perfW?"PERFECT":"GOOD";
+      comboRef.current++;
+      const finalPts=Math.round((grade==="PERFECT"?POINTS_PERFECT:POINTS_GOOD)*(1+Math.floor(comboRef.current/5)*0.2));
+      scoreRef.current+=finalPts; setScore(scoreRef.current);
+      setCombo(comboRef.current); setMaxCombo(prev=>Math.max(prev,comboRef.current));
+      statsRef.current[grade.toLowerCase()]++;
+      addFloat(tapAngle,`+${finalPts}`,grade==="PERFECT"?"#00f5d4":"#ffd166");
+      hitImpactRef.current=Date.now();
+    }
+    playerHitsRef.current=[...playerHitsRef.current,{angle01:tapAngle,type,voiceIdx,noteIdx,grade,time:Date.now(),color:type==="drum"?DRUM_VOICES[voiceIdx]?.color:MELODY_COLOR}];
+    setPlayerHits([...playerHitsRef.current]);
+  }, [addFloat]);
+
+  const handleDrumTap = useCallback((voiceIdx) => {
+    if(screenRef.current!=="play"||!rdRef.current)return;
+    const data=rdRef.current;
+    const totalDur=data.numSlots*(60/data.bpm);
+    const elapsed=(performance.now()-sweepStartRef.current)/1000;
+    playDrum(voiceIdx);
+    tryMatch(elapsed/totalDur,"drum",voiceIdx,null,data);
+  }, [playDrum,tryMatch]);
+
+  const handleMelodyTap = useCallback((btnIdx) => {
+    if(screenRef.current!=="play"||!rdRef.current)return;
+    const data=rdRef.current;
+    if(!data.melodyActive)return;
+    const note=data.uniqueNotes?.[btnIdx];
+    if(!note)return;
+    const totalDur=data.numSlots*(60/data.bpm);
+    const elapsed=(performance.now()-sweepStartRef.current)/1000;
+    playMelody(note,btnIdx);
+    tryMatch(elapsed/totalDur,"melody",null,btnIdx,data);
+  }, [playMelody,tryMatch]);
+
+  useEffect(() => {
+    const onDown = (e) => {
+      if(e.repeat)return;
+      const k=e.key.toLowerCase();
+      if(e.shiftKey&&e.code?.startsWith("Digit")){
+        e.preventDefault();
+        const digit=parseInt(e.code.replace("Digit",""));
+        const target=digit===0?9:digit-1;
+        cancelAnimationFrame(animRef.current); clearInterval(countIntervalRef.current);
+        savedRoundDataRef.current=null; beginRound(target,null); return;
+      }
+      if((e.ctrlKey||e.metaKey)&&e.code==="Digit0"){
+        e.preventDefault();
+        cancelAnimationFrame(animRef.current); clearInterval(countIntervalRef.current);
+        savedRoundDataRef.current=null; beginRound(MELODY_UNLOCK_ROUND,null); return;
+      }
+      if(screenRef.current==="menu"&&(k===" "||k==="enter")){e.preventDefault();startGame();return;}
+      if(screenRef.current==="result"&&(k===" "||k==="enter")){
+        e.preventDefault();
+        if(passedRef.current){setAttempts(1);savedRoundDataRef.current=null;beginRound(roundRef.current+1,null);}
+        else{setAttempts(prev=>prev+1);beginRound(roundRef.current,savedRoundDataRef.current);}
+        return;
+      }
+      const di=DRUM_KEYS.indexOf(k);
+      if(di!==-1){e.preventDefault();handleDrumTap(di);return;}
+      if(k in MELODY_KEYS_MAP){e.preventDefault();handleMelodyTap(MELODY_KEYS_MAP[k]);}
+    };
+    window.addEventListener("keydown",onDown);
+    return()=>window.removeEventListener("keydown",onDown);
+  }, [handleDrumTap,handleMelodyTap,startGame,beginRound]);
+
+  useEffect(()=>{return()=>{
+    cancelAnimationFrame(animRef.current); clearInterval(countIntervalRef.current);
+    drumsRef.current?.dispose(); synthRef.current?.dispose();
+    synthRevRef.current?.dispose(); synthDelRef.current?.dispose();
+    bassRef.current?.dispose(); padRef.current?.dispose();
+    padRevRef.current?.dispose(); compRef.current?.dispose();
+  };},[]);
+
+  const numSlots = roundData?.numSlots||INITIAL_SLOTS;
+  const melodyActive = roundData?.melodyActive||false;
+  const restart = () => {
+    cancelAnimationFrame(animRef.current); clearInterval(countIntervalRef.current);
+    screenRef.current="menu"; setScreen("menu");
+    setRound(0);setScore(0);setCombo(0);setMaxCombo(0);setAttempts(1);
+    scoreRef.current=0;comboRef.current=0;savedRoundDataRef.current=null;
+  };
+
+  return (
+    <div style={{height:"100vh",width:"100vw",overflow:"hidden",background:"radial-gradient(ellipse at 50% 35%, #0f0f20 0%, #07070d 70%)",fontFamily:"'IBM Plex Mono', monospace",color:"#e0e0e0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative",userSelect:"none"}}>
+      <style>{FONTS}{ANIMS}</style>
+
+      {screen!=="menu"&&(
+        <button onClick={restart} style={{position:"absolute",top:10,right:10,zIndex:50,fontFamily:"'Orbitron'",fontSize:8,color:"#444",letterSpacing:1,background:"none",border:"1px solid #222",borderRadius:4,padding:"4px 8px",cursor:"pointer"}}>↺ RESET</button>
+      )}
+
+      {screen==="menu"&&<MenuScreen onStart={startGame}/>}
+
+      {(screen==="listen"||screen==="countdown"||screen==="play")&&(
+        <>
+          <div style={{position:"absolute",top:10,left:14,right:14,display:"flex",justifyContent:"space-between",alignItems:"flex-start",zIndex:20}}>
+            <div>
+              <div style={{fontFamily:"'Orbitron'",fontSize:"clamp(15px,3.5vw,22px)",fontWeight:900}}>{scoreRef.current.toLocaleString()}</div>
+              {combo>2&&<div style={{fontFamily:"'Orbitron'",fontSize:10,color:"#00f5d4",letterSpacing:2,animation:combo>=10?"glow 1s infinite":"none"}}>{combo}x</div>}
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontFamily:"'Orbitron'",fontSize:9,color:"#888",letterSpacing:3}}>ROUND {round+1}{attempts>1?` · ATT ${attempts}`:""}</div>
+              <div style={{fontSize:8,color:"#555",marginTop:1}}>{roundData?.melodyName||""} · {roundData?.composer||""}</div>
+            </div>
+            <div style={{fontFamily:"'Orbitron'",fontSize:9,color:"#555",letterSpacing:1,padding:"4px 8px",border:"1px solid #1a1a2e",borderRadius:4}}>{Math.round(PASS_THRESHOLD*100)}% TO PASS</div>
+          </div>
+
+          <div style={{position:"absolute",top:50,left:0,right:0,textAlign:"center",zIndex:20}}>
+            {screen==="listen"&&<div style={{fontFamily:"'Orbitron'",fontSize:11,color:"#ffd166",letterSpacing:4,animation:"pulse 1.2s infinite"}}>♫ LISTEN</div>}
+            {screen==="play"&&(
+              <div style={{fontFamily:"'Orbitron'",fontSize:11,color:"#00f5d4",letterSpacing:4}}>
+                YOUR TURN
+                {melodyActive&&round<MELODY_UNLOCK_ROUND+3&&(
+                  <span style={{fontSize:8,color:MELODY_COLOR+"88",letterSpacing:2,marginLeft:8}}>
+                    {round<MELODY_UNLOCK_ROUND+2?"2":"3"} MELODY NOTES
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {screen==="countdown"&&(
+            <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:30,background:"rgba(7,7,13,0.6)"}}>
+              <div key={countNum} style={{fontFamily:"'Orbitron'",fontSize:64,fontWeight:900,color:"#00f5d4",textShadow:"0 0 30px #00f5d488",animation:"countPop 0.45s ease-out forwards"}}>{countNum}</div>
+            </div>
+          )}
+
+          <Wheel numSlots={numSlots} allHits={roundData?.allHits||[]} bgMelody={roundData?.bgMelody||[]} sweepAngle={sweepAngle} litSlots={litSlots} playerHits={playerHits} floats={floats} phase={screen} melodyActive={melodyActive} ghostHits={ghostHits} combo={combo} hitTime={hitImpactRef.current}/>
+
+          <div style={{position:"absolute",bottom:10,left:0,right:0,zIndex:20,display:"flex",justifyContent:"center",alignItems:"center",gap:4}}>
+            {DRUM_VOICES.map((v,i)=>{
+              const unlocked=round>=DRUM_UNLOCK[i];
+              const lit=unlocked&&isDrumLit(i);
+              return(<button key={i} onPointerDown={(e)=>{e.preventDefault();if(unlocked)handleDrumTap(i);}} style={{width:"clamp(42px,10vw,56px)",height:"clamp(52px,12vw,64px)",borderRadius:8,cursor:unlocked?"pointer":"default",background:lit?v.color+"44":unlocked?v.color+"12":"#0a0a0f",border:`2px solid ${lit?v.color:unlocked?v.color+"55":"#1a1a2e"}`,boxShadow:lit?`0 0 16px ${v.color}66`:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,opacity:unlocked?1:0.15,transition:"all 0.08s"}}>
+                <div style={{fontFamily:"'Orbitron'",fontSize:7,fontWeight:700,color:lit?"#fff":unlocked?v.color:"#333",letterSpacing:1}}>{v.short}</div>
+                <div style={{fontSize:11,fontWeight:700,color:lit?v.color:unlocked?v.color+"99":"#222",fontFamily:"'Orbitron'"}}>{DRUM_KEYS[i].toUpperCase()}</div>
+              </button>);
+            })}
+            <div style={{width:"clamp(8px,3vw,20px)"}}/>
+            {melodyActive
+              ?(roundData?.uniqueNotes||[]).map((note,btnIdx)=>{
+                  const lit=isMelodyLit(btnIdx);
+                  return(<button key={btnIdx} onPointerDown={(e)=>{e.preventDefault();handleMelodyTap(btnIdx);}} style={{width:"clamp(42px,10vw,56px)",height:"clamp(52px,12vw,64px)",borderRadius:8,cursor:"pointer",background:lit?MELODY_COLOR+"44":MELODY_COLOR+"12",border:`1.5px solid ${lit?MELODY_COLOR:MELODY_COLOR+"33"}`,boxShadow:lit?`0 0 14px ${MELODY_COLOR}66`:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,transition:"all 0.08s"}}>
+                    <div style={{fontFamily:"'Orbitron'",fontSize:7,color:lit?MELODY_COLOR:MELODY_COLOR+"88",letterSpacing:0.5,fontWeight:lit?900:400}}>{note.replace(/\d/,"")}</div>
+                    <div style={{fontSize:11,color:lit?MELODY_COLOR:MELODY_COLOR+"44",fontFamily:"'Orbitron'"}}>{MELODY_KEY_LABELS[btnIdx]}</div>
+                  </button>);
+                })
+              :["J","K","L",";"].map(k=>(<div key={k} style={{width:"clamp(42px,10vw,56px)",height:"clamp(52px,12vw,64px)",borderRadius:8,border:"1.5px solid #111",display:"flex",alignItems:"center",justifyContent:"center",opacity:0.08}}><span style={{fontFamily:"'Orbitron'",fontSize:11,color:"#888"}}>{k}</span></div>))
+            }
+          </div>
+        </>
+      )}
+
+      {screen==="result"&&(
+        <div style={{textAlign:"center"}}>
+          <div style={{fontFamily:"'Orbitron'",fontSize:10,color:"#888",letterSpacing:4}}>ROUND {round+1}{attempts>1?` · ATTEMPT ${attempts}`:""}</div>
+          <div style={{fontSize:8,color:"#555",marginTop:2,letterSpacing:1}}>{roundData?.melodyName} · {roundData?.composer}</div>
+          {passed
+            ?<div style={{fontFamily:"'Orbitron'",fontSize:"clamp(16px,4vw,26px)",fontWeight:900,color:"#00f5d4",marginTop:6,letterSpacing:3,textShadow:"0 0 20px #00f5d444"}}>{roundStats.missed===0?"FLAWLESS!":ROUND_MESSAGES[Math.min(round,ROUND_MESSAGES.length-1)]}</div>
+            :<div style={{fontFamily:"'Orbitron'",fontSize:"clamp(16px,4vw,26px)",fontWeight:900,color:"#e63946",marginTop:6,letterSpacing:3,textShadow:"0 0 20px #e6394644"}}>NOT QUITE...</div>
+          }
+          {(()=>{const total=roundData?.allHits?.length||1;const matched=total-roundStats.missed;const pct=Math.round((matched/total)*100);return(
+            <div style={{marginTop:16,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <div style={{fontSize:10,color:"#888",letterSpacing:2}}>ACCURACY: <span style={{color:passed?"#00f5d4":"#e63946",fontWeight:700,fontFamily:"'Orbitron'"}}>{pct}%</span><span style={{color:"#444"}}> / {Math.round(PASS_THRESHOLD*100)}%</span></div>
+              <div style={{width:200,height:8,background:"#1a1a2e",borderRadius:4,border:"1px solid #222",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",left:`${PASS_THRESHOLD*100}%`,top:0,bottom:0,width:2,background:"#ffffff44",zIndex:2}}/>
+                <div style={{height:"100%",borderRadius:4,width:`${pct}%`,background:passed?"#00f5d4":"#e63946",transition:"width 0.5s ease",boxShadow:passed?"0 0 8px #00f5d444":"0 0 8px #e6394644"}}/>
+              </div>
+            </div>
+          );})()}
+          <div style={{display:"flex",gap:24,justifyContent:"center",marginTop:18}}>
+            {[{label:"PERFECT",val:roundStats.perfect,color:"#00f5d4"},{label:"GOOD",val:roundStats.good,color:"#ffd166"},{label:"MISSED",val:roundStats.missed,color:"#e63946"}].map(s=>(
+              <div key={s.label}><div style={{fontFamily:"'Orbitron'",fontSize:20,fontWeight:900,color:s.color}}>{s.val}</div><div style={{fontSize:7,color:"#666",letterSpacing:2,marginTop:2}}>{s.label}</div></div>
+            ))}
+          </div>
+          <div style={{marginTop:12,fontSize:10,color:"#666"}}>SCORE: <span style={{color:"#fff",fontWeight:700}}>{score.toLocaleString()}</span>&nbsp;·&nbsp;MAX COMBO: <span style={{color:"#00f5d4",fontWeight:700}}>{maxCombo}x</span></div>
+          {passed&&round+1===MELODY_UNLOCK_ROUND&&(
+            <div style={{marginTop:14,padding:"10px 18px",borderRadius:8,display:"inline-block",background:`linear-gradient(90deg, ${MELODY_COLOR}15, ${MELODY_COLOR}08)`,border:`1px solid ${MELODY_COLOR}44`}}>
+              <div style={{fontFamily:"'Orbitron'",fontSize:10,fontWeight:700,color:MELODY_COLOR,letterSpacing:2}}>♫ MELODY RECALL UNLOCKED</div>
+              <div style={{fontSize:9,color:"#888",marginTop:4}}>Play back melody notes with J K L ;</div>
+            </div>
+          )}
+          {passed&&round+1===DRUM_UNLOCK[1]&&<UnlockBanner text={`NEW DRUM: ${DRUM_VOICES[1].name}`} color={DRUM_VOICES[1].color}/>}
+          {passed&&round+1===DRUM_UNLOCK[2]&&<UnlockBanner text={`NEW DRUM: ${DRUM_VOICES[2].name}`} color={DRUM_VOICES[2].color}/>}
+          {passed&&round+1===DRUM_UNLOCK[3]&&<UnlockBanner text={`NEW DRUM: ${DRUM_VOICES[3].name}`} color={DRUM_VOICES[3].color}/>}
+          <div style={{marginTop:16,display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+            {passed
+              ?<button onClick={()=>{setAttempts(1);savedRoundDataRef.current=null;beginRound(round+1,null);}} style={{fontFamily:"'Orbitron'",fontSize:11,fontWeight:900,letterSpacing:3,padding:"10px 22px",borderRadius:8,cursor:"pointer",background:"#00f5d412",border:"2px solid #00f5d4",color:"#00f5d4"}}>NEXT ROUND →</button>
+              :<>
+                <button onClick={()=>{setAttempts(prev=>prev+1);beginRound(round,savedRoundDataRef.current);}} style={{fontFamily:"'Orbitron'",fontSize:11,fontWeight:900,letterSpacing:3,padding:"10px 22px",borderRadius:8,cursor:"pointer",background:"#e6394618",border:"2px solid #e63946",color:"#e63946"}}>TRY AGAIN ↻</button>
+                {slowReplayAvail&&<button onClick={()=>doSlowReplay(savedRoundDataRef.current)} style={{fontFamily:"'Orbitron'",fontSize:9,fontWeight:700,letterSpacing:2,padding:"7px 16px",borderRadius:8,cursor:"pointer",background:"#ffd16610",border:"1px solid #ffd16655",color:"#ffd166"}}>♩ SLOW REPLAY</button>}
+              </>
+            }
+            <div style={{fontSize:8,color:"#444",letterSpacing:2}}>SPACE / ENTER</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// WHEEL SVG
+// ============================================================
+function Wheel({numSlots,allHits,bgMelody,sweepAngle,litSlots,playerHits,floats,phase,melodyActive,ghostHits=[],combo=0,hitTime=0}){
+  const size=300,cx=size/2,cy=size/2,r=size*0.36,innerR=r-16;
+  const slotA=(s)=>(s/numSlots)*TWO_PI-Math.PI/2;
+  const sweepRad=sweepAngle>=0?sweepAngle*TWO_PI-Math.PI/2:null;
+  const comboGlow=combo>=3?Math.min(combo/15,1):0;
+  const ringColor=combo>=10?"#00f5d4":combo>=5?"#ffd166":"#1a1a2e";
+  const ringOpacity=combo>=3?0.15+comboGlow*0.3:0;
+  return(
+    <div style={{position:"relative",width:"clamp(240px,52vw,320px)",aspectRatio:"1",zIndex:10}}>
+      <svg viewBox={`0 0 ${size} ${size}`} style={{width:"100%",height:"100%"}}>
+        {comboGlow>0&&<circle cx={cx} cy={cy} r={r+8} fill="none" stroke={ringColor} strokeWidth={2} opacity={ringOpacity} style={{filter:`blur(${2+comboGlow*3}px)`}}/>}
+        <circle cx={cx} cy={cy} r={r+3} fill="none" stroke={combo>=5?ringColor+"44":"#1a1a2e"} strokeWidth={1}/>
+        <circle cx={cx} cy={cy} r={innerR} fill="none" stroke="#111118" strokeWidth={0.5}/>
+        <circle cx={cx} cy={cy} r={r*0.4} fill="none" stroke="#0d0d15" strokeWidth={0.5} opacity={0.5}/>
+        {Array.from({length:numSlots},(_,i)=>{const a=slotA(i);const beat=numSlots>=8?i%(numSlots/4)===0:i%2===0;return<line key={i} x1={cx+Math.cos(a)*(r-5)} y1={cy+Math.sin(a)*(r-5)} x2={cx+Math.cos(a)*(r+5)} y2={cy+Math.sin(a)*(r+5)} stroke={beat?"#2a2a3a":"#181822"} strokeWidth={beat?1.2:0.6}/>;  })}
+        {phase==="listen"&&allHits.map((h,i)=>{
+          const a=slotA(h.slot),x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r;
+          const lit=litSlots.some(l=>l.slot===h.slot&&((l.type==="drum"&&h.type==="drum"&&l.voiceIdx===h.voiceIdx)||(l.type==="melody"&&h.type==="melody")));
+          const color=h.type==="drum"?DRUM_VOICES[h.voiceIdx].color:MELODY_COLOR;
+          return(<g key={`l-${i}`}>{lit&&<circle cx={x} cy={y} r={7} fill="none" stroke={color} strokeWidth={1.5} opacity={0.5}><animate attributeName="r" from="7" to="18" dur="0.4s" fill="freeze"/><animate attributeName="opacity" from="0.7" to="0" dur="0.4s" fill="freeze"/></circle>}{h.type==="melody"?<rect x={x-6} y={y-6} width={12} height={12} rx={3} fill={lit?color:color+"33"} stroke={color+"55"} strokeWidth={1} style={{transition:"fill 0.12s"}}/>:<circle cx={x} cy={y} r={7} fill={lit?color:color+"33"} stroke={color+"55"} strokeWidth={1} style={{transition:"fill 0.12s"}}/>}</g>);
+        })}
+        {phase==="listen"&&bgMelody.map((m,i)=>{const a=slotA(m.slot),x=cx+Math.cos(a)*innerR,y=cy+Math.sin(a)*innerR;const lit=litSlots.some(l=>l.slot===m.slot&&l.type==="bg");return<circle key={`bg-${i}`} cx={x} cy={y} r={4} fill={lit?MELODY_COLOR+"55":MELODY_COLOR+"15"} style={{transition:"fill 0.15s"}}/>;  })}
+        {phase==="play"&&playerHits.map((h,i)=>{
+          const a=h.angle01*TWO_PI-Math.PI/2,x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r;
+          const color=h.color||"#888",perf=h.grade==="PERFECT",good=h.grade==="GOOD",dotR=perf?9:good?8:6;
+          return(<g key={`ph-${i}`}>{(perf||good)&&<circle cx={x} cy={y} r={dotR} fill="none" stroke={color} strokeWidth={perf?2:1}><animate attributeName="r" from={String(dotR)} to={perf?"24":"16"} dur={perf?"0.5s":"0.3s"} fill="freeze"/><animate attributeName="opacity" from={perf?"0.9":"0.5"} to="0" dur={perf?"0.5s":"0.3s"} fill="freeze"/></circle>}{perf&&<circle cx={x} cy={y} r={dotR} fill="none" stroke="#fff" strokeWidth={1}><animate attributeName="r" from={String(dotR)} to="18" dur="0.35s" fill="freeze"/><animate attributeName="opacity" from="0.6" to="0" dur="0.35s" fill="freeze"/></circle>}{h.type==="melody"?<rect x={x-dotR*0.7} y={y-dotR*0.7} width={dotR*1.4} height={dotR*1.4} rx={3} fill={h.grade?color:color+"44"} stroke={perf?"#fff":color+"55"} strokeWidth={perf?2:1}/>:<circle cx={x} cy={y} r={dotR} fill={h.grade?color:color+"44"} stroke={perf?"#fff":color+"55"} strokeWidth={perf?2:1}/>}</g>);
+        })}
+        {phase==="play"&&ghostHits.map((g,i)=>{
+          const a=slotA(g.slot),x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r;
+          const age=Date.now()-g.time;if(age>1500)return null;
+          const opacity=Math.max(0,1-age/1500);
+          return(<g key={`ghost-${i}`} opacity={opacity}><circle cx={x} cy={y} r={10} fill="none" stroke={g.color} strokeWidth={1} strokeDasharray="3 2"/><text x={x} y={y+3} textAnchor="middle" fill={g.color} fontSize={6} fontFamily="Orbitron" fontWeight={700}>{g.label}</text></g>);
+        })}
+        {sweepRad!==null&&<>
+          {combo>=3&&phase==="play"&&<line x1={cx} y1={cy} x2={cx+Math.cos(sweepRad)*(r+16)} y2={cy+Math.sin(sweepRad)*(r+16)} stroke={combo>=10?"#00f5d4":"#ffd166"} strokeWidth={4} strokeLinecap="round" opacity={comboGlow*0.3} style={{filter:"blur(4px)"}}/>}
+          <line x1={cx} y1={cy} x2={cx+Math.cos(sweepRad)*(r+12)} y2={cy+Math.sin(sweepRad)*(r+12)} stroke={phase==="listen"?"#ffd16666":combo>=5?"#00f5d488":"#00f5d466"} strokeWidth={phase==="play"?2:1.5} strokeLinecap="round"/>
+          <circle cx={cx+Math.cos(sweepRad)*r} cy={cy+Math.sin(sweepRad)*r} r={phase==="play"?4:3} fill={phase==="listen"?"#ffd166":"#00f5d4"} opacity={0.9}/>
+        </>}
+        <circle cx={cx} cy={cy} r={3} fill={phase==="listen"?"#ffd166":"#00f5d4"} opacity={0.5}/>
+      </svg>
+      {floats.map(f=>{const a=f.angle01*TWO_PI-Math.PI/2,px=50+Math.cos(a)*28,py=50+Math.sin(a)*28;return(<div key={f.id} style={{position:"absolute",left:`${px}%`,top:`${py}%`,transform:"translate(-50%,-50%)",fontFamily:"'Orbitron'",fontSize:10,fontWeight:900,color:f.color,textShadow:`0 0 6px ${f.color}66`,animation:"fadeUp 0.8s ease-out forwards",pointerEvents:"none"}}>{f.text}</div>);})}
+    </div>
+  );
+}
+
+function MenuScreen({onStart}){
+  return(
+    <div style={{textAlign:"center",padding:"0 20px"}}>
+      <div style={{fontFamily:"'Orbitron'",fontSize:"clamp(22px,6vw,40px)",fontWeight:900,color:"#00f5d4",letterSpacing:5,textShadow:"0 0 40px #00f5d455, 0 0 80px #00f5d422"}}>RHYTHM WHEEL</div>
+      <div style={{fontFamily:"'Orbitron'",fontSize:"clamp(9px,2vw,13px)",color:"#e63946",letterSpacing:6,marginTop:3,textShadow:"0 0 12px #e6394655"}}>LISTEN · REMEMBER · REPEAT</div>
+      <div style={{margin:"28px auto",opacity:0.4}}>
+        <svg viewBox="0 0 120 120" style={{width:100,height:100}}>
+          <circle cx={60} cy={60} r={42} fill="none" stroke="#1a1a2e" strokeWidth={1}/>
+          {[0,1,2,3,4,5,6,7].map(i=>{const a=(i/8)*TWO_PI-Math.PI/2;return<circle key={i} cx={60+Math.cos(a)*42} cy={60+Math.sin(a)*42} r={4} fill={i%2===0?"#00f5d433":"#1a1a2e"}/>;  })}
+        </svg>
+      </div>
+      <div style={{fontSize:11,color:"#666",lineHeight:1.9,maxWidth:320,margin:"0 auto"}}>Classic melodies play as you learn.<br/>Listen, then tap the rhythm back.<br/>Beethoven, Mozart, Bach and more.<br/>Hit 60% accuracy to advance.</div>
+      <div style={{marginTop:16,display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <span style={{fontSize:8,color:"#555",letterSpacing:1}}>DRUMS:</span>
+          {DRUM_KEYS.map((k,i)=>(<span key={i} style={{fontFamily:"'Orbitron'",fontSize:9,fontWeight:700,color:DRUM_VOICES[i].color,padding:"3px 6px",border:`1px solid ${DRUM_VOICES[i].color}44`,borderRadius:4}}>{k.toUpperCase()}</span>))}
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <span style={{fontSize:8,color:"#555",letterSpacing:1}}>MELODY:</span>
+          {["J","K","L",";"].map((k,i)=>(<span key={i} style={{fontFamily:"'Orbitron'",fontSize:8,fontWeight:700,color:MELODY_COLOR+"88",padding:"2px 4px",border:`1px solid ${MELODY_COLOR}33`,borderRadius:3}}>{k}</span>))}
+        </div>
+      </div>
+      <button onClick={onStart} style={{marginTop:24,fontFamily:"'Orbitron'",fontSize:13,fontWeight:900,letterSpacing:4,padding:"12px 30px",borderRadius:8,cursor:"pointer",background:"#00f5d412",border:"2px solid #00f5d4",color:"#00f5d4"}}>BEGIN</button>
+      <div style={{marginTop:6,fontSize:9,color:"#444",letterSpacing:2}}>SPACE / ENTER</div>
+    </div>
+  );
+}
+
+function UnlockBanner({text,color}){
+  return(<div style={{marginTop:12,padding:"8px 14px",borderRadius:8,display:"inline-flex",alignItems:"center",gap:6,background:color+"12",border:`1px solid ${color}44`}}><div style={{width:10,height:10,borderRadius:"50%",background:color}}/><span style={{fontFamily:"'Orbitron'",fontSize:9,fontWeight:700,color,letterSpacing:2}}>{text}</span></div>);
+}
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<RhythmWheel/>);
+</script>
+</body>
+</html>
