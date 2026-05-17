@@ -6,7 +6,7 @@
 <title>Rhythm Wheel</title>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; background: #07070d; }
+  html, body { height: 100%; overflow: hidden; background: #07070d; touch-action: none; }
   #root { height: 100%; }
 </style>
 </head>
@@ -594,25 +594,25 @@ function RhythmWheel() {
 
           <Wheel numSlots={numSlots} allHits={roundData?.allHits||[]} bgMelody={roundData?.bgMelody||[]} sweepAngle={sweepAngle} litSlots={litSlots} playerHits={playerHits} floats={floats} phase={screen} melodyActive={melodyActive} ghostHits={ghostHits} combo={combo} hitTime={hitImpactRef.current}/>
 
-          <div style={{position:"absolute",bottom:10,left:0,right:0,zIndex:20,display:"flex",justifyContent:"center",alignItems:"center",gap:4}}>
+          <div style={{position:"absolute",bottom:8,left:0,right:0,zIndex:20,display:"flex",justifyContent:"center",alignItems:"center",gap:"clamp(2px,1vw,6px)"}}>
             {DRUM_VOICES.map((v,i)=>{
               const unlocked=round>=DRUM_UNLOCK[i];
               const lit=unlocked&&isDrumLit(i);
-              return(<button key={i} onPointerDown={(e)=>{e.preventDefault();if(unlocked)handleDrumTap(i);}} style={{width:"clamp(42px,10vw,56px)",height:"clamp(52px,12vw,64px)",borderRadius:8,cursor:unlocked?"pointer":"default",background:lit?v.color+"44":unlocked?v.color+"12":"#0a0a0f",border:`2px solid ${lit?v.color:unlocked?v.color+"55":"#1a1a2e"}`,boxShadow:lit?`0 0 16px ${v.color}66`:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,opacity:unlocked?1:0.15,transition:"all 0.08s"}}>
-                <div style={{fontFamily:"'Orbitron'",fontSize:7,fontWeight:700,color:lit?"#fff":unlocked?v.color:"#333",letterSpacing:1}}>{v.short}</div>
-                <div style={{fontSize:11,fontWeight:700,color:lit?v.color:unlocked?v.color+"99":"#222",fontFamily:"'Orbitron'"}}>{DRUM_KEYS[i].toUpperCase()}</div>
+              return(<button key={i} onPointerDown={(e)=>{e.preventDefault();if(unlocked)handleDrumTap(i);}} style={{width:"clamp(48px,11vw,62px)",height:"clamp(56px,13vw,68px)",borderRadius:8,cursor:unlocked?"pointer":"default",background:lit?v.color+"44":unlocked?v.color+"12":"#0a0a0f",border:`2px solid ${lit?v.color:unlocked?v.color+"55":"#1a1a2e"}`,boxShadow:lit?`0 0 16px ${v.color}66`:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,opacity:unlocked?1:0.15,transition:"all 0.08s"}}>
+                <div style={{fontFamily:"'Orbitron'",fontSize:"clamp(6px,1.5vw,8px)",fontWeight:700,color:lit?"#fff":unlocked?v.color:"#333",letterSpacing:1}}>{v.short}</div>
+                <div style={{fontSize:"clamp(12px,3vw,15px)",fontWeight:700,color:lit?v.color:unlocked?v.color+"99":"#222",fontFamily:"'Orbitron'"}}>{DRUM_KEYS[i].toUpperCase()}</div>
               </button>);
             })}
-            <div style={{width:"clamp(8px,3vw,20px)"}}/>
+            <div style={{width:"clamp(4px,2vw,16px)"}}/>
             {melodyActive
               ?(roundData?.uniqueNotes||[]).map((note,btnIdx)=>{
                   const lit=isMelodyLit(btnIdx);
-                  return(<button key={btnIdx} onPointerDown={(e)=>{e.preventDefault();handleMelodyTap(btnIdx);}} style={{width:"clamp(42px,10vw,56px)",height:"clamp(52px,12vw,64px)",borderRadius:8,cursor:"pointer",background:lit?MELODY_COLOR+"44":MELODY_COLOR+"12",border:`1.5px solid ${lit?MELODY_COLOR:MELODY_COLOR+"33"}`,boxShadow:lit?`0 0 14px ${MELODY_COLOR}66`:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,transition:"all 0.08s"}}>
-                    <div style={{fontFamily:"'Orbitron'",fontSize:7,color:lit?MELODY_COLOR:MELODY_COLOR+"88",letterSpacing:0.5,fontWeight:lit?900:400}}>{note.replace(/\d/,"")}</div>
-                    <div style={{fontSize:11,color:lit?MELODY_COLOR:MELODY_COLOR+"44",fontFamily:"'Orbitron'"}}>{MELODY_KEY_LABELS[btnIdx]}</div>
+                  return(<button key={btnIdx} onPointerDown={(e)=>{e.preventDefault();handleMelodyTap(btnIdx);}} style={{width:"clamp(48px,11vw,62px)",height:"clamp(56px,13vw,68px)",borderRadius:8,cursor:"pointer",background:lit?MELODY_COLOR+"44":MELODY_COLOR+"12",border:`1.5px solid ${lit?MELODY_COLOR:MELODY_COLOR+"33"}`,boxShadow:lit?`0 0 14px ${MELODY_COLOR}66`:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,transition:"all 0.08s"}}>
+                    <div style={{fontFamily:"'Orbitron'",fontSize:"clamp(6px,1.5vw,8px)",color:lit?MELODY_COLOR:MELODY_COLOR+"88",letterSpacing:0.5,fontWeight:lit?900:400}}>{note.replace(/\d/,"")}</div>
+                    <div style={{fontSize:"clamp(12px,3vw,15px)",color:lit?MELODY_COLOR:MELODY_COLOR+"44",fontFamily:"'Orbitron'"}}>{MELODY_KEY_LABELS[btnIdx]}</div>
                   </button>);
                 })
-              :["J","K","L",";"].map(k=>(<div key={k} style={{width:"clamp(42px,10vw,56px)",height:"clamp(52px,12vw,64px)",borderRadius:8,border:"1.5px solid #111",display:"flex",alignItems:"center",justifyContent:"center",opacity:0.08}}><span style={{fontFamily:"'Orbitron'",fontSize:11,color:"#888"}}>{k}</span></div>))
+              :["J","K","L",";"].map(k=>(<div key={k} style={{width:"clamp(48px,11vw,62px)",height:"clamp(56px,13vw,68px)",borderRadius:8,border:"1.5px solid #111",display:"flex",alignItems:"center",justifyContent:"center",opacity:0.08}}><span style={{fontFamily:"'Orbitron'",fontSize:"clamp(12px,3vw,15px)",color:"#888"}}>{k}</span></div>))
             }
           </div>
         </>
@@ -677,7 +677,7 @@ function Wheel({numSlots,allHits,bgMelody,sweepAngle,litSlots,playerHits,floats,
   const ringColor=combo>=10?"#00f5d4":combo>=5?"#ffd166":"#1a1a2e";
   const ringOpacity=combo>=3?0.15+comboGlow*0.3:0;
   return(
-    <div style={{position:"relative",width:"clamp(240px,52vw,320px)",aspectRatio:"1",zIndex:10}}>
+    <div style={{position:"relative",width:"clamp(200px,44vw,300px)",aspectRatio:"1",zIndex:10}}>
       <svg viewBox={`0 0 ${size} ${size}`} style={{width:"100%",height:"100%"}}>
         {comboGlow>0&&<circle cx={cx} cy={cy} r={r+8} fill="none" stroke={ringColor} strokeWidth={2} opacity={ringOpacity} style={{filter:`blur(${2+comboGlow*3}px)`}}/>}
         <circle cx={cx} cy={cy} r={r+3} fill="none" stroke={combo>=5?ringColor+"44":"#1a1a2e"} strokeWidth={1}/>
